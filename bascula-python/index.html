@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Almacén — Báscula PRENLIS 401C (Python)</title>
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Almacén — Báscula PRENLIS 401C</h1>
+      <p>Pesaje por HTTP en la PC del cable. El ERP en PHP llama al mismo endpoint.</p>
+    </header>
+
+    <div class="tabs">
+      <button type="button" class="tab active" data-panel="pesaje">Pesaje</button>
+      <button type="button" class="tab" data-panel="diagnostico">Diagnóstico (Chrome)</button>
+    </div>
+
+    <div id="panel-pesaje" class="panel active">
+      <div class="alert">
+        <strong>Uso de almacén:</strong> el puerto se elige aquí, no en el diálogo de Chrome.
+        Al pulsar <em>Pesar</em> el servidor abre el serial unos 0.8 s, lee una trama y lo cierra.
+        Si el diagnóstico de Chrome está conectado, desconéctalo antes: el puerto solo lo puede usar uno.
+      </div>
+
+      <div class="grid">
+        <section class="card">
+          <h2>Datos del movimiento</h2>
+          <div class="field-row">
+            <label>Artículo
+              <input type="text" id="art-codigo" placeholder="Código o nombre">
+            </label>
+            <label>Nota
+              <input type="text" id="art-nota" placeholder="Entrada o salida">
+            </label>
+          </div>
+        </section>
+
+        <section class="card weight-panel">
+          <h2>Resultado</h2>
+          <div>
+            <span id="pesaje-peso" class="weight-value">—</span>
+            <span id="pesaje-unidad" class="weight-unit">kg</span>
+          </div>
+          <div id="pesaje-estado" class="badge stable">Listo para pesar</div>
+          <div id="pesaje-raw" class="raw-line"></div>
+        </section>
+      </div>
+
+      <section class="card" style="margin-top: 1rem;">
+        <h2>Puerto serial</h2>
+        <div class="field-row">
+          <label>Puerto
+            <select id="pesaje-puerto"></select>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button type="button" id="btn-refrescar-puertos" class="btn-secondary">Actualizar puertos</button>
+          <button type="button" id="btn-pesar" class="btn-primary">Pesar</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="panel-diagnostico" class="panel">
+    <div class="alert">
+      <strong>Importante:</strong> El puerto COM está en <em>esta</em> computadora.
+      Chrome pedirá permiso para el adaptador USB-serial. Python (servidor local) guarda los pesos;
+      la lectura del cable la hace el navegador. No necesitas instalar paquetes con pip.
+      Si no ves datos, prueba 9600 8N1, activa DTR/RTS, o modo continuo en el menú de la báscula.
+    </div>
+
+    <div class="grid">
+      <section class="card weight-panel">
+        <h2>Peso en vivo</h2>
+        <div>
+          <span id="peso-display" class="weight-value">—</span>
+          <span id="unidad-display" class="weight-unit">kg</span>
+        </div>
+        <div id="estado-display" class="badge stable">Esperando…</div>
+        <div id="raw-display" class="raw-line"></div>
+      </section>
+
+      <section class="card">
+        <h2>Conexión serial</h2>
+        <div class="field-row">
+          <label>Baudios
+            <select id="baudRate">
+              <option value="1200">1200</option>
+              <option value="2400">2400</option>
+              <option value="4800">4800</option>
+              <option value="9600" selected>9600</option>
+              <option value="19200">19200</option>
+              <option value="38400">38400</option>
+            </select>
+          </label>
+          <label>Bits de datos
+            <select id="dataBits">
+              <option value="7">7</option>
+              <option value="8" selected>8</option>
+            </select>
+          </label>
+          <label>Parada
+            <select id="stopBits">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+            </select>
+          </label>
+          <label>Paridad
+            <select id="parity">
+              <option value="none" selected>Ninguna</option>
+              <option value="even">Par</option>
+              <option value="odd">Impar</option>
+            </select>
+          </label>
+          <label>Flow control
+            <select id="flowControl">
+              <option value="none" selected>Ninguno</option>
+              <option value="hardware">Hardware</option>
+            </select>
+          </label>
+          <label>Decimales UI
+            <select id="decimals">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+            </select>
+          </label>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="dtr" checked> DTR
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="rts" checked> RTS
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="show-raw" checked> Mostrar líneas cortas en log
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="auto-retry" checked> Reintentar open (9600 8N1 / sin flow)
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="skip-signals"> Omitir DTR/RTS al conectar
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="debug-hex"> Modo debug: mostrar bytes HEX
+        </label>
+        <p id="traffic-stats" class="raw-line" style="margin-top: 0.75rem;">Bytes RX: 0 | chunks: 0</p>
+        <div class="btn-row">
+          <button type="button" id="btn-conectar" class="btn-primary">Conectar puerto</button>
+          <button type="button" id="btn-desconectar" class="btn-danger" disabled>Desconectar</button>
+          <button type="button" id="btn-enviar-w" class="btn-secondary" disabled>Enviar W (pedir peso)</button>
+          <button type="button" id="btn-diagnostico" class="btn-secondary">Diagnóstico sistema</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top: 1rem;">
+      <h2>Registrar en almacén</h2>
+      <label>Nota / referencia
+        <input type="text" id="nota" placeholder="Ej. entrada lote 42" style="width: 100%; max-width: 400px;">
+      </label>
+      <div class="btn-row">
+        <button type="button" id="btn-capturar" class="btn-primary" disabled>Capturar peso actual</button>
+        <button type="button" id="btn-refrescar" class="btn-secondary">Actualizar historial</button>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 1rem;">
+      <h2>Log serial</h2>
+      <div id="log" class="log"></div>
+    </section>
+
+    </div>
+
+    <section class="card" style="margin-top: 1rem;">
+      <h2>Historial local</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Peso</th>
+            <th>Artículo</th>
+            <th>Nota</th>
+          </tr>
+        </thead>
+        <tbody id="historial-body">
+          <tr><td colspan="4" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <script type="module" src="assets/js/bascula-serial.js"></script>
+  <script type="module" src="assets/js/pesaje.js"></script>
+</body>
+</html>
